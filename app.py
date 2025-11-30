@@ -1,27 +1,29 @@
-from flask import Flask, redirect, request
 import os
 import requests
-# Imports the compatible package
-import psycopg2cffi as psycopg2
+import psycopg2
 from urllib.parse import urlparse
 from datetime import datetime
-
-app = Flask(__name__)
+from flask import Flask, redirect, request
 
 # --- CONFIGURATION ---
-app.secret_key = os.environ['FLASK_SECRET_KEY'] 
+# Vercel requires FLASK_SECRET_KEY to be set as an environment variable
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 REDIRECT_URI = os.environ.get("REDIRECT_URI") 
-# CORRECTED: Reads the variable name Vercel/Neon sets automatically.
+# FINAL FIX: Use the Vercel/Neon preferred variable name
 DB_URL = os.environ.get("POSTGRES_URL") 
 SCOPES = "identify guilds.join"
 
+# Initialize Flask App
+app = Flask(__name__)
+# Vercel requires a secret key for session security
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
+
 # --- Database Helper Function ---
 def connect_to_db():
-    """Connects to the remote PostgreSQL database."""
+    """Connects to the remote PostgreSQL database using the Vercel variable."""
     if not DB_URL:
-        # This will now correctly trigger if POSTGRES_URL is missing.
+        # This error should no longer happen if Vercel is set up correctly
         raise ValueError("POSTGRES_URL not found in environment variables.")
     
     url = urlparse(DB_URL)
@@ -35,7 +37,12 @@ def connect_to_db():
     )
     return conn
 
-# --- 1. /authorize route ---
+# --- 1. Root Route for Health Check ---
+@app.route('/')
+def index():
+    return "The Discord OAuth2 Vercel Server is running."
+
+# --- 2. /authorize route ---
 @app.route('/authorize')
 def authorize():
     if not CLIENT_ID or not REDIRECT_URI:
@@ -49,7 +56,7 @@ def authorize():
     )
     return redirect(discord_auth_url)
 
-# --- 2. /callback route (SAVES DATA TO POSTGRES) ---
+# --- 3. /callback route (SAVES DATA TO POSTGRES) ---
 @app.route('/callback')
 def callback():
     code = request.args.get('code')
@@ -57,7 +64,7 @@ def callback():
     if not code:
         return "Authorization failed or denied by the user."
         
-    # Step 1: Exchange code for token (requests.post remains the same)
+    # Step 1: Exchange code for token
     token_url = 'https://discord.com/api/v10/oauth2/token'
     data = {
         'client_id': CLIENT_ID,
@@ -77,7 +84,6 @@ def callback():
 
     # Step 2: Extract tokens and user ID
     access_token = token_data['access_token']
-    refresh_token = token_data.get('refresh_token')
     
     user_req = requests.get('https://discord.com/api/v10/users/@me', 
                             headers={'Authorization': f'Bearer {access_token}'})
@@ -99,9 +105,8 @@ def callback():
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (user_id) DO UPDATE SET 
             access_token = EXCLUDED.access_token, 
-            refresh_token = EXCLUDED.refresh_token,
             timestamp = EXCLUDED.timestamp
-        """, (user_id, access_token, refresh_token, datetime.now()))
+        """, (user_id, access_token, token_data.get('refresh_token'), datetime.now()))
         
         conn.commit()
         conn.close()
@@ -113,9 +118,6 @@ def callback():
         "<p>Your permission has been saved to the remote database. You may now return to Discord and use the <code>/join</code> command.</p>"
     )
 
-@app.route('/')
-def index():
-    return "This is the Vercel server for Discord OAuth2."
-
-if __name__ == '__main__':
-    app.run(port=5000)
+# The following lines are ONLY for local testing and are commented out for Vercel
+# if __name__ == '__main__':
+#     app.run(port=5000)
