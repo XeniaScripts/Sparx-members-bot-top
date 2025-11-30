@@ -1,3 +1,4 @@
-discord.py
+Flask
 requests
-psycopg2
+psycopg2-binary
+gunicorn
