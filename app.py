@@ -29,12 +29,10 @@ def connect_to_db():
     return conn
 
 def init_db():
-    """Create table and add missing columns if needed"""
     try:
         conn = connect_to_db()
         cursor = conn.cursor()
         
-        # Create table if it doesn't exist
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS authorized_users (
                 user_id TEXT PRIMARY KEY,
@@ -44,7 +42,6 @@ def init_db():
             )
         """)
         
-        # Add refresh_token column if it's missing
         cursor.execute("""
             ALTER TABLE authorized_users
             ADD COLUMN IF NOT EXISTS refresh_token TEXT
@@ -144,9 +141,10 @@ def callback():
     return (
         f"<h2>✅ Authorized!</h2>"
         f"<p>User: <b>{username}</b></p>"
-        f"<p>You may now use the <code>/join [server_id]</code> command!</p>"
+        f"<p>You have been authorised successfully</p>"
+        f"<p>You may now use the bot to join servers!</p>"
     )
 
 if __name__ == "__main__":
-    init_db()  # Initialize database on startup
+    init_db()
     app.run(debug=False)
