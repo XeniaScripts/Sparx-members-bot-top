@@ -1,26 +1,43 @@
-from flask import Flask, redirect, request, session
+from flask import Flask, redirect, request
 import os
 import requests
-import json 
+import psycopg2
+from urllib.parse import urlparse
+from datetime import datetime
 
 app = Flask(__name__)
 
-# IMPORTANT: This must be set as an Environment Variable in Vercel.
+# --- CONFIGURATION ---
 app.secret_key = os.environ['FLASK_SECRET_KEY'] 
-
-# --- Discord OAuth2 Configuration ---
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 REDIRECT_URI = os.environ.get("REDIRECT_URI") 
+DB_URL = os.environ.get("DATABASE_URL") # Reads the Vercel/Neon URL
 SCOPES = "identify guilds.join"
 
-# --- 1. /authorize route ---
+# --- Database Helper Function ---
+def connect_to_db():
+    """Connects to the remote PostgreSQL database."""
+    if not DB_URL:
+        # Vercel provides this automatically via integration, so this is a safety check.
+        raise ValueError("DATABASE_URL not found in environment variables.")
+    
+    url = urlparse(DB_URL)
+    conn = psycopg2.connect(
+        database=url.path[1:],
+        user=url.username,
+        password=url.password,
+        host=url.hostname,
+        port=url.port,
+        sslmode='require' 
+    )
+    return conn
+
+# --- 1. /authorize route (remains the same) ---
 @app.route('/authorize')
 def authorize():
-    """Builds the Discord authorization URL and redirects the user."""
-    
     if not CLIENT_ID or not REDIRECT_URI:
-        return "Error: Discord Client ID or Redirect URI not configured in Vercel.", 500
+        return "Error: Discord Client ID or Redirect URI not configured.", 500
 
     discord_auth_url = (
         f"https://discord.com/oauth2/authorize?response_type=code"
@@ -30,49 +47,57 @@ def authorize():
     )
     return redirect(discord_auth_url)
 
-# --- 2. /callback route (Database WRITEING CODE IS REMOVED HERE) ---
+# --- 2. /callback route (SAVES DATA TO POSTGRES) ---
 @app.route('/callback')
 def callback():
-    """Receives the authorization code and exchanges it for the user's permanent Access Token."""
-    
     code = request.args.get('code')
-    
     if not code:
         return "Authorization failed or denied by the user."
         
-    # Step 1: Prepare data for token exchange
-    data = {
-        'client_id': CLIENT_ID,
-        'client_secret': CLIENT_SECRET,
-        'grant_type': 'authorization_code',
-        'code': code,
-        'redirect_uri': REDIRECT_URI,
-        'scope': SCOPES
-    }
-    
-    headers = {
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    
-    # Step 2: Send the POST request to Discord's API
-    r = requests.post('https://discord.com/api/oauth2/token', data=data, headers=headers)
-    token_data = r.json()
+    # 1. Exchange code for token (requests.post logic)
+    # ... (code for token exchange here) ...
 
-    if 'access_token' not in token_data:
-        return f"Error exchanging code for token: {token_data.get('error_description', 'Unknown error')}", 400
+    # 2. Extract tokens and user ID
+    access_token = token_data.get('access_token')
+    refresh_token = token_data.get('refresh_token')
     
-    # --- SUCCESS - Token Received, Database Save Step SKIPPED ---
+    user_req = requests.get('https://discord.com/api/v10/users/@me', 
+                            headers={'Authorization': f'Bearer {access_token}'})
+    user_data = user_req.json()
+    user_id = user_data.get('id')
     
+    if not user_id:
+        return "Error: Could not retrieve user ID after authorization.", 500
+
+    # 3. Save/update the user's token data in the PostgreSQL database
+    try:
+        conn = connect_to_db()
+        cursor = conn.cursor()
+        
+        # INSERT OR REPLACE handles existing users
+        cursor.execute("""
+            INSERT INTO authorized_users 
+            (user_id, access_token, refresh_token, timestamp) 
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET 
+            access_token = EXCLUDED.access_token, 
+            refresh_token = EXCLUDED.refresh_token,
+            timestamp = EXCLUDED.timestamp
+        """, (user_id, access_token, refresh_token, datetime.now()))
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        return f"Database Save Failed: {e}", 500
+
     return (
-        "<h2>✅ Authorization Successful! (Token Verified)</h2>"
-        "<p>Your access token was successfully retrieved, confirming all tokens and links are correct. </p>"
-        "<p>The final step requires connecting a **Remote Database** service to save this permission.</p>"
+        "<h2>✅ Authorization Successful!</h2>"
+        "<p>Your permission has been saved to the remote database. You may now return to Discord and use the <code>/join</code> command.</p>"
     )
 
-# --- Simple Root Route ---
 @app.route('/')
 def index():
-    return "This is the Vercel server for Discord OAuth2. Please use the /authorize link found in Discord."
+    return "This is the Vercel server for Discord OAuth2."
 
 if __name__ == '__main__':
     app.run(port=5000)
