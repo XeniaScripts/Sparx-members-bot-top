@@ -6,12 +6,12 @@ from datetime import datetime
 from flask import Flask, redirect, request
 
 # --- CONFIGURATION ---
-# Vercel requires FLASK_SECRET_KEY to be set as an environment variable
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 REDIRECT_URI = os.environ.get("REDIRECT_URI") 
-# FINAL FIX: Use the Vercel/Neon preferred variable name
-DB_URL = os.environ.get("POSTGRES_URL") 
+
+# FINAL FIX: Explicitly reads the DATABASE_URL variable
+DB_URL = os.environ.get("DATABASE_URL") 
 SCOPES = "identify guilds.join"
 
 # Initialize Flask App
@@ -21,10 +21,9 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
 
 # --- Database Helper Function ---
 def connect_to_db():
-    """Connects to the remote PostgreSQL database using the Vercel variable."""
+    """Connects to the remote PostgreSQL database using the DATABASE_URL variable."""
     if not DB_URL:
-        # This error should no longer happen if Vercel is set up correctly
-        raise ValueError("POSTGRES_URL not found in environment variables.")
+        raise ValueError("DATABASE_URL not found in environment variables.")
     
     url = urlparse(DB_URL)
     conn = psycopg2.connect(
@@ -98,13 +97,13 @@ def callback():
         conn = connect_to_db()
         cursor = conn.cursor()
         
-        # INSERT OR REPLACE handles existing users
         cursor.execute("""
             INSERT INTO authorized_users 
             (user_id, access_token, refresh_token, timestamp) 
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (user_id) DO UPDATE SET 
             access_token = EXCLUDED.access_token, 
+            refresh_token = EXCLUDED.refresh_token,
             timestamp = EXCLUDED.timestamp
         """, (user_id, access_token, token_data.get('refresh_token'), datetime.now()))
         
@@ -117,7 +116,3 @@ def callback():
         "<h2>✅ Authorization Successful!</h2>"
         "<p>Your permission has been saved to the remote database. You may now return to Discord and use the <code>/join</code> command.</p>"
     )
-
-# The following lines are ONLY for local testing and are commented out for Vercel
-# if __name__ == '__main__':
-#     app.run(port=5000)
