@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sparx Member Bot Status</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        h1 {
+            color: #4a4a99;
+        }
+        code {
+            background-color: #eee;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Discord Member Authorization Server</h1>
+    <p>This server handles the OAuth2 process for the Sparx bot and connects to the PostgreSQL database.</p>
+    
+    <hr>
+    
+    <h2>Instructions</h2>
+    <p>To authorize, please use the <code>/authorize</code> slash command in the Discord server. The bot will provide the correct link which uses the <code>/authorize</code> endpoint on this server.</p>
+    
+    <p>This static page helps ensure the Vercel deployment runs correctly by providing a stable root (`/`) path.</p>
+
+    <p>For testing (must use the exact Vercel URL): <a href="/authorize">Test Authorization Endpoint</a></p>
+</body>
+</html>
