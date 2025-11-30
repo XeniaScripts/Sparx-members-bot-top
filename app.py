@@ -1,28 +1,27 @@
 from flask import Flask, redirect, request, session
 import os
 import requests
-import json # Used for easy handling of JSON data from Discord
+import json 
 
 app = Flask(__name__)
-# This secret key is needed for Flask sessions. Vercel environment variable is best.
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'a_temporary_dev_secret') 
+
+# IMPORTANT: This must be set as an Environment Variable in Vercel for security.
+# It will crash if not set, which is safer than using a default key.
+app.secret_key = os.environ['FLASK_SECRET_KEY'] 
 
 # --- Discord OAuth2 Configuration (Reads from Vercel Environment Variables) ---
-# THESE MUST BE SET IN VERCEl: CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 REDIRECT_URI = os.environ.get("REDIRECT_URI") 
 
-# Permissions needed: identify (know user) and guilds.join (can add user to server)
 SCOPES = "identify guilds.join"
 
 # --- 1. /authorize route (The link users click) ---
 @app.route('/authorize')
 def authorize():
-    """Builds the Discord authorization URL and redirects the user to Discord's official page."""
+    """Builds the Discord authorization URL and redirects the user."""
     
     if not CLIENT_ID or not REDIRECT_URI:
-        # Failsafe if you forget to set the Vercel variables
         return "Error: Discord Client ID or Redirect URI not configured in Vercel.", 500
 
     discord_auth_url = (
@@ -31,7 +30,6 @@ def authorize():
         f"&scope={SCOPES}"
         f"&redirect_uri={REDIRECT_URI}"
     )
-    # Redirects the user's browser to the Discord authorization page
     return redirect(discord_auth_url)
 
 # --- 2. /callback route (Discord sends the user back here) ---
@@ -42,10 +40,9 @@ def callback():
     code = request.args.get('code')
     
     if not code:
-        # If the user clicks 'Cancel' on the Discord authorization page
         return "Authorization failed or denied by the user."
         
-    # Step 1: Prepare the data to exchange the 'code' for the permanent Access Token
+    # Step 1: Prepare data for token exchange
     data = {
         'client_id': CLIENT_ID,
         'client_secret': CLIENT_SECRET,
@@ -67,16 +64,11 @@ def callback():
         return f"Error exchanging code for token: {token_data.get('error_description', 'Unknown error')}", 400
     
     # --- SUCCESS ---
+    # In a real bot, you would save this token data to a database now!
     
-    # This is the critical step: saving the data. 
-    # **In a real bot, you would connect to a database here** (like SQLite)
-    # and save token_data['access_token'] and token_data['refresh_token']
-    # to be used by your Katabump bot later when a user types /join.
-
-    # For this simple example, we just show a success message:
     return (
         "<h2>✅ Authorization Successful!</h2>"
-        "<p>Your access token was retrieved by the server. Your bot on Katabump now has the permission to add you.</p>"
+        "<p>Your access token was retrieved by the server. Your bot now has the permission to add you.</p>"
         "<p>You may now return to Discord and use the <code>/join</code> command.</p>"
     )
 
@@ -86,5 +78,5 @@ def index():
     return "This is the Vercel server for Discord OAuth2. Please use the /authorize link found in Discord."
 
 if __name__ == '__main__':
-    # This is only for local testing, Vercel handles the production launch
+    # Vercel handles the production launch, but this is for local testing
     app.run(port=5000)
