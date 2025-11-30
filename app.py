@@ -28,6 +28,35 @@ def connect_to_db():
     )
     return conn
 
+def init_db():
+    """Create table and add missing columns if needed"""
+    try:
+        conn = connect_to_db()
+        cursor = conn.cursor()
+        
+        # Create table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS authorized_users (
+                user_id TEXT PRIMARY KEY,
+                access_token TEXT NOT NULL,
+                refresh_token TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Add refresh_token column if it's missing
+        cursor.execute("""
+            ALTER TABLE authorized_users
+            ADD COLUMN IF NOT EXISTS refresh_token TEXT
+        """)
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print("✅ Database initialized", flush=True)
+    except Exception as e:
+        print(f"🚨 Database init error: {e}", flush=True)
+
 @app.route('/')
 def index():
     return "Discord OAuth2 Server is running."
@@ -119,4 +148,5 @@ def callback():
     )
 
 if __name__ == "__main__":
+    init_db()  # Initialize database on startup
     app.run(debug=False)
