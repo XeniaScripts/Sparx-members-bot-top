@@ -1,7 +1,8 @@
 from flask import Flask, redirect, request
 import os
 import requests
-import psycopg2
+# Imports the compatible package
+import psycopg2cffi as psycopg2
 from urllib.parse import urlparse
 from datetime import datetime
 
@@ -12,15 +13,16 @@ app.secret_key = os.environ['FLASK_SECRET_KEY']
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 REDIRECT_URI = os.environ.get("REDIRECT_URI") 
-DB_URL = os.environ.get("DATABASE_URL") # Reads the Vercel/Neon URL
+# CORRECTED: Reads the variable name Vercel/Neon sets automatically.
+DB_URL = os.environ.get("POSTGRES_URL") 
 SCOPES = "identify guilds.join"
 
 # --- Database Helper Function ---
 def connect_to_db():
     """Connects to the remote PostgreSQL database."""
     if not DB_URL:
-        # Vercel provides this automatically via integration, so this is a safety check.
-        raise ValueError("DATABASE_URL not found in environment variables.")
+        # This will now correctly trigger if POSTGRES_URL is missing.
+        raise ValueError("POSTGRES_URL not found in environment variables.")
     
     url = urlparse(DB_URL)
     conn = psycopg2.connect(
@@ -33,7 +35,7 @@ def connect_to_db():
     )
     return conn
 
-# --- 1. /authorize route (remains the same) ---
+# --- 1. /authorize route ---
 @app.route('/authorize')
 def authorize():
     if not CLIENT_ID or not REDIRECT_URI:
@@ -51,14 +53,30 @@ def authorize():
 @app.route('/callback')
 def callback():
     code = request.args.get('code')
+    
     if not code:
         return "Authorization failed or denied by the user."
         
-    # 1. Exchange code for token (requests.post logic)
-    # ... (code for token exchange here) ...
+    # Step 1: Exchange code for token (requests.post remains the same)
+    token_url = 'https://discord.com/api/v10/oauth2/token'
+    data = {
+        'client_id': CLIENT_ID,
+        'client_secret': CLIENT_SECRET,
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': REDIRECT_URI,
+        'scope': SCOPES
+    }
+    
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    token_req = requests.post(token_url, data=data, headers=headers)
+    token_data = token_req.json()
 
-    # 2. Extract tokens and user ID
-    access_token = token_data.get('access_token')
+    if 'access_token' not in token_data:
+        return f"Error exchanging code for token: {token_data.get('error_description', 'Unknown error')}", 400
+
+    # Step 2: Extract tokens and user ID
+    access_token = token_data['access_token']
     refresh_token = token_data.get('refresh_token')
     
     user_req = requests.get('https://discord.com/api/v10/users/@me', 
@@ -69,7 +87,7 @@ def callback():
     if not user_id:
         return "Error: Could not retrieve user ID after authorization.", 500
 
-    # 3. Save/update the user's token data in the PostgreSQL database
+    # Step 3: Save/update the user's token data in the PostgreSQL database
     try:
         conn = connect_to_db()
         cursor = conn.cursor()
